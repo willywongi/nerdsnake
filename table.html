@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<head>
+<title>Node JS deck</title>
+<link rel="stylesheet" type="text/css" href="http://yui.yahooapis.com/3.4.1/build/cssbase/cssbase-min.css">
+<style>
+	#header { position: absolute; top: 0; left: 0; right:0; height: 10em; }
+	#title { position: absolute: top: 0; left:0; height: 10em; width: 10em; }
+	#logger { position: absolute; top: 0; left: 10em; right: 10em; height: 10em; }
+	#share { position: absolute; top: 0; width: 10em; right: 0; height: 5em; }
+	#add-player { position: absolute; top: 5em; width: 10em; right: 0; height: 5em; }
+	#tabletop {}
+</style>
+</head>
+<body>
+<div id="header">
+	<div id="title">Snakes in a box!</div>
+	<div id="logger"></div>
+	<div id="share"></div>
+	<div id="add-player"></div>
+</div>
+<div id="tabletop"></div>
+<script src="/s/qrcode.js"></script>
+<script src="/config.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="http://yui.yahooapis.com/3.4.1/build/yui/yui-min.js"></script>
+
+<script>
+NERDS.urlVars = (function(href) {
+ 	var vars = {};
+	href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m, key, value) {
+		vars[key] = value;
+	});
+	return vars;
+}(window.location.href));
+</script>
+
+<script>
+YUI().use("node", function(Y) {
+	var socket = io.connect(NERDS.BASE_URL + 'table'),
+		currentGame;
+	socket.on('game', function(data) {
+		currentGame = data.table_id;
+		/* codice orrendo per generare il qrcode */
+		var qr = qrcode(9, 'M');
+		qr.addData(data.controllerURI);
+		qr.make();
+		Y.one("#add-player").setContent(Y.Node.create('<a href="'+data.controllerURI+'">' + qr.createGif() +'Add Player</a>'));
+		/* generiamo il link per condividere il tavolo */
+		Y.one("#share").setContent(Y.Node.create('<a href="'+data.gameURI+'">Game Link</a>'));
+	
+	});
+	console.log('Asking game: '+NERDS.urlVars.table_id);
+	socket.emit('askgame', {table_id: NERDS.urlVars.table_id});
+});
+</script>
+
+</body>
+</html>
