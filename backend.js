@@ -8,6 +8,7 @@ var app = require('express').createServer(),
 		'SCHEMA': "http",
 		'PORT': 8123,
 	},
+	GameO,
 	Table, Player;
 
 NERDS.BASE_URL = NERDS.SCHEMA + "://" + NERDS.IP + ":" + NERDS.PORT + "/";
@@ -24,7 +25,7 @@ Table._instances = [];
 Table._byId = {}
 
 Table.getById = function(id) {
-	if (! Table.hasOwnProperty(id)) {
+	if (! Table._byId.hasOwnProperty(id)) {
 		console.warn('Unable to find table by id ('+id+')');
 	}
 	return Table._byId[id];
@@ -32,21 +33,23 @@ Table.getById = function(id) {
 
 Table.prototype.addPlayer = function(player) {
 	this.players[player.id] = player;
+	this.socket.emit('addPlayer', player.toJson();
 };
 
 Table.prototype.directionChange = function(player, dir) {
 	this.socket.emit('directionChange', {playerId: player.id, direction: dir});
 };
 
-Player = function(socket, table) {
+Player = function(socket, table, name) {
 	this.id = rng.uid();
 	this.table = table;
 	this.socket = socket;
+	this.name = name;
 	this.direction = null;
 	this.score = null;
 	Player._byId[this.id] = this;
 	Player._instances.push(this);
-	console.log('new player on table '+table.id);
+	console.log('New player on table '+table.id+': '+this.name);
 };
 
 Player._instances = [];
@@ -96,18 +99,26 @@ io.configure(null, function(){
 io.of('/table').on('connection', function(socket) {
 	socket.on('askgame', function(data) {
 		console.log('askgame ('+data.tableId+')');
-		var table, game = {};
+		var table, game = {}, error = {};
 		if (data.tableId) {
 			table = Table.getById(data.tableId);
 		} else {
 			table = new Table(socket);
 			console.info("Opening a new table ("+table.id+")");			
 		}
-		game.id = table.id;
-		game.controllerURI = NERDS.BASE_URL + "controller.html?tableId=" + table.id;
-		game.gameURI = NERDS.BASE_URL + "table.html?tableId=" + table.id;
+		
+		if (table) {
+			game.id = table.id;
+			game.controllerURI = NERDS.BASE_URL + "controller.html?tableId=" + table.id;
+			game.gameURI = NERDS.BASE_URL + "table.html?tableId=" + table.id;
 
-		socket.emit('game', game);
+			socket.emit('game', game);
+		} else {
+			error.code = 404;
+			error.text = "Unable to find the desired Table";
+			
+			socket.emit('error', error);
+		}
 	});
 });
 
@@ -115,8 +126,14 @@ io.of('/controller').on('connection', function(socket) {
 	socket.on('joingame', function(data) {
 		console.log('joingame ('+data.playerName+')');
 		var table = Table.getById(data.tableId),
-			player = new Player(socket, table);
-		socket.emit('game', {playerId: player.id});
+			player;
+		
+		if (table) {
+			player = new Player(socket, table, data.playerName);
+			socket.emit('game', {playerId: player.id});
+		} else {
+			socket.emit('error', {code: 404, text: 'Table not found'});
+		}
 	});
 	socket.on('directionChange', function(data) {
 		var player = Player.getById(data.playerId);
