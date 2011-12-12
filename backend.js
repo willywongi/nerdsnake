@@ -33,7 +33,7 @@ Table.getById = function(id) {
 
 Table.prototype.addPlayer = function(player) {
 	this.players[player.id] = player;
-	this.socket.emit('addPlayer', player.toJson();
+	//this.socket.emit('addPlayer', player.toJson());
 };
 
 Table.prototype.directionChange = function(player, dir) {
