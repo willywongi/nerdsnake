@@ -23,14 +23,13 @@
 <script src="/config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="http://yui.yahooapis.com/3.4.1/build/yui/yui-min.js"></script>
-
 <script>
-NERDS.urlVars = (function(href) {
- 	var vars = {};
-	href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m, key, value) {
-		vars[key] = value;
+NERDS.urlVars = (function(h) {
+ 	var vs = {};
+	h.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m, k, v) {
+		vs[k] = v;
 	});
-	return vars;
+	return vs;
 }(window.location.href));
 </script>
 
@@ -39,18 +38,21 @@ YUI().use("node", function(Y) {
 	var socket = io.connect(NERDS.BASE_URL + 'table'),
 		currentGame;
 	socket.on('game', function(data) {
-		currentGame = data.table_id;
+		currentGame = data.tableId;
 		/* codice orrendo per generare il qrcode */
 		var qr = qrcode(9, 'M');
 		qr.addData(data.controllerURI);
 		qr.make();
-		Y.one("#add-player").setContent(Y.Node.create('<a href="'+data.controllerURI+'">' + qr.createGif() +'Add Player</a>'));
+		Y.one("#add-player").setContent(Y.Node.create('<a href="'+data.controllerURI+'" target="_blank">' + qr.createGif() +'Add Player</a>'));
 		/* generiamo il link per condividere il tavolo */
 		Y.one("#share").setContent(Y.Node.create('<a href="'+data.gameURI+'">Game Link</a>'));
 	
 	});
-	console.log('Asking game: '+NERDS.urlVars.table_id);
-	socket.emit('askgame', {table_id: NERDS.urlVars.table_id});
+	socket.on('directionChange', function(data) {
+		console.log('Player ('+data.playerId+') changed direction to '+data.direction);
+	});
+	console.log('Asking game: '+NERDS.urlVars.tableId);
+	socket.emit('askgame', {tableId: NERDS.urlVars.tableId});
 });
 </script>
 
