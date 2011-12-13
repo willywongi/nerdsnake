@@ -33,7 +33,7 @@ Table.getById = function(id) {
 
 Table.prototype.addPlayer = function(player) {
 	this.players[player.id] = player;
-	//this.socket.emit('addPlayer', player.toJson());
+	this.socket.emit('playerAdded', {playerId: player.id, playerName: player.name});
 };
 
 Table.prototype.directionChange = function(player, dir) {
@@ -49,6 +49,7 @@ Player = function(socket, table, name) {
 	this.score = null;
 	Player._byId[this.id] = this;
 	Player._instances.push(this);
+	table.addPlayer(this);
 	console.log('New player on table '+table.id+': '+this.name);
 };
 
@@ -108,7 +109,7 @@ io.of('/table').on('connection', function(socket) {
 		}
 		
 		if (table) {
-			game.id = table.id;
+			game.gameId = table.id;
 			game.controllerURI = NERDS.BASE_URL + "controller.html?tableId=" + table.id;
 			game.gameURI = NERDS.BASE_URL + "table.html?tableId=" + table.id;
 

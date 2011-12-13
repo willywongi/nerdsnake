@@ -22,7 +22,8 @@
 <script src="/s/qrcode.js"></script>
 <script src="/config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="http://yui.yahooapis.com/3.4.1/build/yui/yui-min.js"></script>
+<script src="http://yui.yahooapis.com/3.4.1/build/yui/yui.js"></script>
+<script src="/s/game-ui.js"></script>
 <script>
 NERDS.urlVars = (function(h) {
  	var vs = {};
@@ -34,11 +35,12 @@ NERDS.urlVars = (function(h) {
 </script>
 
 <script>
-YUI().use("node", function(Y) {
+YUI().use("node", "snake-ui", function(Y) {
 	var socket = io.connect(NERDS.BASE_URL + 'table'),
+		pit,
 		currentGame;
 	socket.on('game', function(data) {
-		currentGame = data.tableId;
+		currentGame = data.gameId;
 		/* codice orrendo per generare il qrcode */
 		var qr = qrcode(9, 'M');
 		qr.addData(data.controllerURI);
@@ -46,10 +48,16 @@ YUI().use("node", function(Y) {
 		Y.one("#add-player").setContent(Y.Node.create('<a href="'+data.controllerURI+'" target="_blank">' + qr.createGif() +'Add Player</a>'));
 		/* generiamo il link per condividere il tavolo */
 		Y.one("#share").setContent(Y.Node.create('<a href="'+data.gameURI+'">Game Link</a>'));
-	
+		pit = new Y.NERDS.PitModel({gameId: currentGame, width: 80, height: 60});
 	});
+	socket.on('playerAdded', function(data) {
+		data.pit = pit;
+		var snake = new Y.NERDS.SnakeModel(data);
+	});
+	
 	socket.on('directionChange', function(data) {
 		console.log('Player ('+data.playerId+') changed direction to '+data.direction);
+		pit.getPlayerSnake(data.playerId).set('direction', Y.NERDS.SNAKE_DIRS[data.direction]);
 	});
 	console.log('Asking game: '+NERDS.urlVars.tableId);
 	socket.emit('askgame', {tableId: NERDS.urlVars.tableId});
