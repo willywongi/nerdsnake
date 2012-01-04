@@ -42,12 +42,10 @@ YUI.add('snake-ui', function(Y) {
 		initializer: function(cfg) {
 			// FIXME: break if ! pit
 			this.pit = cfg.pit; 
-		 	// positions on the pit.
-		 	// FIXME: I must know the snake composition and the direction,
-		 	//	to set its initial value.
-			this._snake = cfg.pit.laySnake();
-			Y.log('New Snake created');
-			cfg.pit.addSnake(this);
+		 	
+		 	// The positions on the pit is given during construction
+		 	//	from the pit itself. Only the pit can build snake instances.
+		 	
 			this.on('directionChange', function(e) {
 				/* direction change allowed only if changes axis (ie.: vertical to horizontal) */
 			    var axis = (e.prevVal === DIRS.L || e.prevVal === DIRS.R) ? 'H' : 'V',
@@ -57,8 +55,13 @@ YUI.add('snake-ui', function(Y) {
 			    	e.preventDefault();
 			    }
 			});
+			this.publish('move', {
+				defaultFn: this._moveDefFn,
+				context: this,
+				emitFacade: true
+			});
 		},
-        moveSnake: function() {
+        _moveDefFn: function() {
         	var head = this._snake[0].slice(),
         		direction = this.get('direction'),
 				nextHead = this.pit.getNextTile(head, direction),
@@ -70,16 +73,19 @@ YUI.add('snake-ui', function(Y) {
 			}
 			// let's go ahead.
 			this._snake.unshift(nextHead);
-			if (hasApple) {
+			this.pit._grid[nextHead[1]][nextHead[0]] = this;
+			if (tileType === TILE_TYPES.APPLE) {
 				// Yay! +1!
 				this.set('score', this.get('score') + 1);
 				// drop another apple
 				this.pit.dropApple();
 			} else {
 				// move the snake.
-				this._snake.pop();
+				var tail = this._snake.pop();
+				this.pit._grid[tail[1]][tail[0]] = 0
+				
 			}
-
+			//Y.log(this._snake);
         },
         
 	}, {
@@ -141,19 +147,41 @@ YUI.add('snake-ui', function(Y) {
 			}
 			this._snakes = [];
 			this._snakesByPlayerId = {};
+			this.publish('frame', {
+					defaultFn: this._defFrame,
+					context: this,
+					emitFacade: true
+				});
 			Y.log('Created new Pit, gameId: '+cfg.gameId);
+			
+			this.engine = Y.later(500, this, function() {
+					this.fire('frame');
+				}, [], true);
+			
+			N.PitModel._pits[cfg.gameId] = this;
+			
 		},
-		addSnake: function(snake) {
-			Y.log('Snake added to the pit (player: '+snake.get('playerId')+')');
-			this._snakes.push(snake);
-			this._snakesByPlayerId[snake.get('playerId')] = snake;
+		_defFrame: function() {
+			/* at each frame the snakes advance, if someone eats the apple
+				a new apple is layed down. */
+			for (var i = 0, j = this._snakes.length; i < j; i++) {
+				this._snakes[i].fire('move');
+			}
 		},
-		laySnake: function(l) {
+		addSnake: function(data, l) {
+			/*
+				data = {
+					playerId:,
+					playerName:,
+				}
+			
+			*/
+			Y.log('Snake added to the pit (player: '+data.playerId+')');
 			/* Given a length, return the snake in forms of addresses:
 				[[y0, x0], [y1, x1], [y2, x2]]
 			*/
 			l = l || 3;
-			var freeTileFound, address, snake, steps,
+			var freeTileFound, address, snake, dirs, transform,
 				W = this.get('width'),
 				H = this.get('height');
 			do {
@@ -165,24 +193,27 @@ YUI.add('snake-ui', function(Y) {
 			
 			// ottengo un array con le chiavi delle 4 direzioni
 			// sparpagliato.
-			steps = Y.Array.scramble(Y.Object.keys(STEPS));
+			dirs = Y.Array.scramble(Y.Object.keys(STEPS));
 			
-			Y.Array.every(steps, function(step) {
-				Y.log('Checking if direction '+step+' is free to go for '+l+' tiles');
+			Y.Array.every(dirs, function(d) {
+				Y.log('Checking if direction '+d+' is free to go for '+l+' tiles');
+				var transform = STEPS[d];
 				// Iteration stops if the supplied function does not return a truthy value.
-				var dir = STEPS[step],
-					next, all = 0, allClear;
+				var next, all = 0, allClear;
 				// going with the outer-scope variable snake.
 				snake = [address];
 				while (snake.length <= l) {
-					next = [address[0] + dir[0], address[1] + dir[1]]
-					snake.push(next);
+					next = [address[0] + transform[0], address[1] + transform[1]]
+					snake.unshift(next);
 					// add 1 if "next" is free
 					all += (this.isFree(next)) ? 1 : 0;
 				}
 				// all !== l means that one of the tiles searched is not free.
 				if (all === l) {
 					Y.log('Yes! This path is clear.');
+					// Set the right direction for the snake
+					dir = d;
+					
 				}
 				return all !== l;
 			}, this);
@@ -190,7 +221,25 @@ YUI.add('snake-ui', function(Y) {
 				throw "I'm pityfull, the pit is full";
 			}
 			Y.log("laySnake found this path to be clear: "+snake);
-			return snake;
+			var snakeModel = new N.SnakeModel(data);
+			snakeModel._snake = snake;
+			snakeModel.set('direction', dir);
+
+			this._snakes.push(snakeModel);
+			this._snakesByPlayerId[snakeModel.get('playerId')] = snakeModel;
+			//snakeModel.after('move', this._snake2grid, this, snakeModel);
+			this.fire('snakeAdded', snakeModel);
+			return snakeModel;
+		},
+		_snake2grid: function(e, snakeModel) {
+			/* aggiorna la griglia interna con le referenze ai vari snake */
+			if (snakeModel.get('status') == 'dead') {
+				return;
+			}
+			for (var adr, i=0, j=snakeModel._snake.length; i<j; i++) {
+				adr = snakeModel._snake[i];
+				this._grid[adr[1]][adr[0]] = snakeModel;
+			}
 		},
 		getNextTile: function(head, dir) {
 			var W = this.get('width'),
@@ -208,7 +257,7 @@ YUI.add('snake-ui', function(Y) {
 			} else if (nextTile[1] < 0) {
 				nextTile[1] = W;
 			}
-			Y.log("getNextTile("+head+", "+dir+") = "+nextTile);
+			//Y.log("getNextTile("+head+", "+dir+") = "+nextTile);
 			return nextTile;
 		},
 		isFree: function(address) {
@@ -228,14 +277,83 @@ YUI.add('snake-ui', function(Y) {
 		getPlayerSnake: function(playerId) {
 			return this._snakesByPlayerId[playerId];
 		},
-		dropApple: function() {},
+		dropApple: function() {
+			var apple = this._apple,
+				address,
+				W = this.get('width'),
+				H = this.get('height');
+			while (true) {
+				address = [Math.floor(Math.random() * H), Math.floor(Math.random() * W)];
+				if (this.isFree(address)) {
+					break;
+				}
+			}
+			this._apple = address;
+			this._grid[address[1]][address[0]] = TILE_TYPES.APPLE;
+		},
 	}, {
 		ATTRS: {
 			width: {writeOnce: "initOnly"},
 			height: {writeOnce: "initOnly"},
 			applePosition: {},
 			gameId: {},
+		},
+		_pits: {},
+		getById: function(gameId) {
+			return N.PitModel._pits[gameId];
 		}
 	});
-	Y.log('snake-ui loaded');
+	
+	N.PitView = Y.Base.create('PitView', Y.View, [], {
+		container: "<div />",
+		initializer: function () {
+			var pit = this.model;
+			pit.after('frame', this.renderFrame, this);
+		},
+		render: function(node) {
+            var W = this.model.get('width'),
+                H = this.model.get('height'),
+                s = this.get('tilesSize'),
+                //container = Y.Node.create(this.container),
+                canvas = Y.Node.create('<canvas></canvas>');
+ 
+			canvas.setAttribute('width', W*s);
+			canvas.setAttribute('height', H*s);
+			//container.append(canvas);
+			this.canvas = Y.Node.getDOMNode(canvas).getContext('2d');
+			Y.one(node || 'body').appendChild(canvas);
+			Y.log('created canvas of '+W+'x'+H);
+		},
+		renderFrame: function() {
+            var c = this.canvas,
+            	s = this.get('tilesSize'),
+            	sm;
+			this._clearBoard();
+			for (var row, y = 0, H = this.model._grid.length; y < H; y++) {
+				row = this.model._grid[y];
+				for (var x = 0, W = row.length; x < W; x++) {
+					sm = row[x];
+					if (sm && sm.get) {
+						c.save();
+						c.fillStyle = sm.get('color');
+				        c.fillRect(x*s, y*s, s, s);
+				        c.restore();
+					}
+				} 
+			}
+		},
+        _clearBoard: function() {
+        	var s = this.get('tilesSize'),
+        		w = this.model.get('width'),
+        		h = this.model.get('height'),
+        		ctx = this.canvas;
+            ctx.clearRect(0, 0, s*w, s*h);
+		}		
+	}, {
+		ATTRS: {
+			tilesSize: { value: 10 }
+		}
+	});
+	
+	
 }, '1.0.0', {requires: ['base', 'app', 'event']});

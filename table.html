@@ -22,7 +22,7 @@
 <script src="/s/qrcode.js"></script>
 <script src="/config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="http://yui.yahooapis.com/3.4.1/build/yui/yui.js"></script>
+<script src="/s/yui/build/yui/yui.js"></script>
 <script src="/s/game-ui.js"></script>
 <script>
 NERDS.urlVars = (function(h) {
@@ -38,6 +38,7 @@ NERDS.urlVars = (function(h) {
 YUI().use("node", "snake-ui", function(Y) {
 	var socket = io.connect(NERDS.BASE_URL + 'table'),
 		pit,
+		pitView,
 		currentGame;
 	socket.on('game', function(data) {
 		currentGame = data.gameId;
@@ -45,22 +46,38 @@ YUI().use("node", "snake-ui", function(Y) {
 		var qr = qrcode(9, 'M');
 		qr.addData(data.controllerURI);
 		qr.make();
-		Y.one("#add-player").setContent(Y.Node.create('<a href="'+data.controllerURI+'" target="_blank">' + qr.createGif() +'Add Player</a>'));
+		Y.one("#add-player").setContent(Y.Node.create('<a href="'+data.controllerURI+'" class="open-controller">' + qr.createGif() +'Add Player</a>'));
 		/* generiamo il link per condividere il tavolo */
 		Y.one("#share").setContent(Y.Node.create('<a href="'+data.gameURI+'">Game Link</a>'));
 		pit = new Y.NERDS.PitModel({gameId: currentGame, width: 80, height: 60});
+		pitView = new Y.NERDS.PitView({model: pit});
+		pitView.render('#tabletop');
 	});
 	socket.on('playerAdded', function(data) {
 		data.pit = pit;
-		var snake = new Y.NERDS.SnakeModel(data);
+		//var snake = new Y.NERDS.SnakeModel(data);
+		var snake = pit.addSnake(data);
+		snake.on('directionChange', function(e) {
+			console.log('Player ('+snake.get('playerId')+') changed direction to '+e.newVal);
+		});
 	});
 	
 	socket.on('directionChange', function(data) {
-		console.log('Player ('+data.playerId+') changed direction to '+data.direction);
-		pit.getPlayerSnake(data.playerId).set('direction', Y.NERDS.SNAKE_DIRS[data.direction]);
+		
+		pit.getPlayerSnake(data.playerId).set('direction', data.direction);
 	});
 	console.log('Asking game: '+NERDS.urlVars.tableId);
 	socket.emit('askgame', {tableId: NERDS.urlVars.tableId});
+	
+	Y.delegate('click', function(e) {
+		var url = e.target.get('href');
+		e.preventDefault();
+		window.open(url, "controller", "width=400,height=250,menubar=no,scrollbars=no,status=no,toolbar=no");
+	}, "body", ".open-controller");
+	
+	Y.on('key', function(e) {
+		pit.engine && pit.engine.stop()
+	}, 'down:esc');
 });
 </script>
 
