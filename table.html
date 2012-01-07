@@ -39,7 +39,8 @@ YUI().use("node", "snake-ui", function(Y) {
 	var socket = io.connect(NERDS.BASE_URL + 'table'),
 		pit,
 		pitView,
-		currentGame;
+		currentGame,
+		players = 0;
 	socket.on('game', function(data) {
 		currentGame = data.gameId;
 		/* codice orrendo per generare il qrcode */
@@ -52,6 +53,8 @@ YUI().use("node", "snake-ui", function(Y) {
 		pit = new Y.NERDS.PitModel({gameId: currentGame, width: 80, height: 60});
 		pitView = new Y.NERDS.PitView({model: pit});
 		pitView.render('#tabletop');
+		/* debug */
+		window.pit = pit;
 	});
 	socket.on('playerAdded', function(data) {
 		data.pit = pit;
@@ -63,7 +66,6 @@ YUI().use("node", "snake-ui", function(Y) {
 	});
 	
 	socket.on('directionChange', function(data) {
-		
 		pit.getPlayerSnake(data.playerId).set('direction', data.direction);
 	});
 	console.log('Asking game: '+NERDS.urlVars.tableId);
@@ -72,12 +74,10 @@ YUI().use("node", "snake-ui", function(Y) {
 	Y.delegate('click', function(e) {
 		var url = e.target.get('href');
 		e.preventDefault();
-		window.open(url, "controller", "width=400,height=250,menubar=no,scrollbars=no,status=no,toolbar=no");
+		window.open(url, "controller_"+players, "width=400,height=250,menubar=no,scrollbars=no,status=no,toolbar=no");
+		players++;
 	}, "body", ".open-controller");
 	
-	Y.on('key', function(e) {
-		pit.engine && pit.engine.stop()
-	}, 'down:esc');
 });
 </script>
 

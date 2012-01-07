@@ -2,6 +2,7 @@
 <html>
 <head>
 	<link rel="stylesheet" type="text/css" href="/s/yui/build/cssbase/cssbase-min.css">
+    <meta charset='utf-8'>
 	<style>
 	button { position: absolute; width: 33%; height: 33%; font-size: 500%; padding: 0; }
 	#U { top: 0; right: 33%; bottom: 66%; left: 33% }
@@ -33,37 +34,40 @@
 		return vs;
 	}(window.location.href));
 
-	NERDS.playerName = prompt("Inserisci il tuo nome!");
-
 	YUI().use("event", "node", function(Y) {
-		var socket = io.connect(NERDS.BASE_URL + 'controller'),
-			tId = NERDS.urlVars.tableId,
-			pName = NERDS.playerName,
-			pId, // I know pId just after joining game.
-			changeDirection = function(direction) {
-				console.log('directionChange('+direction+')');
-				socket.emit('directionChange', {tableId: tId, playerId: pId, direction: direction});
-			},
-			errorTmpl = Y.one('#error-tmpl').getContent();
-		socket.on('game', function(data) {
-			// got connected to the game;
-			/* the server will assign me a unique id and a 
-				color, I can start watching for commands. */
-			pId = data.playerId
-			Y.delegate("click", function(e) {
-				var bttn = e.currentTarget,
-					dir = bttn.get('id');
-				e.halt();
-				changeDirection(dir);	
-			}, 'body', 'button');
-		});
+		Y.on('domready', function() {
+			var socket = io.connect(NERDS.BASE_URL + 'controller'),
+				tId = NERDS.urlVars.tableId,
+				pName,
+				pId, // I know pId just after joining game.
+				changeDirection = function(direction) {
+					console.log('directionChange('+direction+')');
+					socket.emit('directionChange', {tableId: tId, playerId: pId, direction: direction});
+				},
+				errorTmpl = Y.one('#error-tmpl').getContent();
+			socket.on('game', function(data) {
+				// got connected to the game;
+				/* the server will assign me a unique id and a 
+					color, I can start watching for commands. */
+				pId = data.playerId
+				Y.delegate("click", function(e) {
+					var bttn = e.currentTarget,
+						dir = bttn.get('id');
+					e.halt();
+					changeDirection(dir);	
+				}, 'body', 'button');
+			});
 	
-		socket.on('error', function(data) {
-			Y.one('body').setContent(Y.sub(errorTmpl, data));
-			console.warn(data);
-		});
+			socket.on('error', function(data) {
+				Y.one('body').setContent(Y.sub(errorTmpl, data));
+				console.warn(data);
+			});
 	
-		socket.emit('joingame', {tableId: tId, playerName: pName});});
+			//pName = prompt("Inserisci il tuo nome!");
+			pName = "Pongi";
+			socket.emit('joingame', {tableId: tId, playerName: pName});
+		});
+	});
 	</script>
 </head>
 <body>

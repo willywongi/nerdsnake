@@ -5,6 +5,9 @@ YUI.add('snake-ui', function(Y) {
 		arr.sort(function(a, b) { return (Math.floor(Math.random() * 100) % 2) ? -1 : 1; });
 		return arr;
 	}
+	
+	YUI.namespace("Env.NERDS.Pits");
+	YUI.namespace("Env.NERDS.Snakes");
 
     var STATI = {
             INIT: 0,
@@ -21,22 +24,35 @@ YUI.add('snake-ui', function(Y) {
         TILES_NUM = 40,
         TILES_SIZE = 10, //px
         BASE_SPEED = 700,
-        DIRS = {
-            // maps to keycodes
-            L:	37,
-            R:	39,
-            U:	38,
-            D:	40
+        DIRECTIONS = {
+        	L: "L",
+        	R: "R",
+        	U: "U",
+        	D: "D"
+        },
+        KEY_CODES = {
+            // maps to keycodes 
+            37: "L",
+            39: "R",
+            38: "U",
+            40: "D"
         },
         STEPS = {
-            37: [-1, 0],
-            39: [+1, 0],
-            38: [0, -1],
-            40: [0, +1]
-        };
+            L: [-1, 0],
+            R: [+1, 0],
+            U: [0, -1],
+            D: [0, +1]
+        },
+        COLORS = Y.Array.scramble([
+        		"#000000",
+        		"#FF5555",
+        		"#55FF55",
+        		"#5555FF",
+        		"#BBBB55"
+        	]);
 
 	var N = Y.namespace('NERDS');
-	N.SNAKE_DIRS = DIRS;
+	N.SNAKE_DIRS = DIRECTIONS;
 	
 	N.SnakeModel = Y.Base.create('SnakeModel', Y.Model, [], {
 		initializer: function(cfg) {
@@ -47,22 +63,32 @@ YUI.add('snake-ui', function(Y) {
 		 	//	from the pit itself. Only the pit can build snake instances.
 		 	
 			this.on('directionChange', function(e) {
+				/* directionChange only allowed when changing axis. */
+				if (e.prevVal === DIRECTIONS.L || e.prevVal === DIRECTIONS.R) {
+					
+				}
+
 				/* direction change allowed only if changes axis (ie.: vertical to horizontal) */
-			    var axis = (e.prevVal === DIRS.L || e.prevVal === DIRS.R) ? 'H' : 'V',
-			        nextAxis = (e.newVal === DIRS.L || e.newVal === DIRS.R) ? 'H' : 'V';
+			    var from = e.prevVal,
+			    	to = e.newVal,
+			    	fromAxis = (from === DIRECTIONS.L || from === DIRECTIONS.R) ? 'H' : 'V',
+			        toAxis = (to === DIRECTIONS.L || to === DIRECTIONS.R) ? 'H' : 'V';
 			    // Validate the desired direction and stores it in the object for the next cycle.
-			    if (axis !== nextAxis) {
+			    if (from !== null && fromAxis === toAxis) {
+			    	Y.log('Prevented direction change from '+from+' to '+to);
 			    	e.preventDefault();
 			    }
 			});
+			
 			this.publish('move', {
 				defaultFn: this._moveDefFn,
 				context: this,
 				emitFacade: true
 			});
+			this._tail = [];
 		},
         _moveDefFn: function() {
-        	var head = this._snake[0].slice(),
+        	var head = this._tail[0].slice(),
         		direction = this.get('direction'),
 				nextHead = this.pit.getNextTile(head, direction),
 				tileType = this.pit.typeOf(nextHead);
@@ -72,7 +98,8 @@ YUI.add('snake-ui', function(Y) {
 				return;
 			}
 			// let's go ahead.
-			this._snake.unshift(nextHead);
+			this._tail.unshift(nextHead);
+			// occupy the spot in the pit.
 			this.pit._grid[nextHead[1]][nextHead[0]] = this;
 			if (tileType === TILE_TYPES.APPLE) {
 				// Yay! +1!
@@ -81,7 +108,8 @@ YUI.add('snake-ui', function(Y) {
 				this.pit.dropApple();
 			} else {
 				// move the snake.
-				var tail = this._snake.pop();
+				var tail = this._tail.pop();
+				// free the spot in the pit.
 				this.pit._grid[tail[1]][tail[0]] = 0
 				
 			}
@@ -90,9 +118,9 @@ YUI.add('snake-ui', function(Y) {
         
 	}, {
 		ATTRS: {
-		// Add custom model attributes here. These attributes will contain your
-		// model's data. See the docs for Y.Attribute to learn more about defining
-		// attributes.
+			// Add custom model attributes here. These attributes will contain your
+			// model's data. See the docs for Y.Attribute to learn more about defining
+			// attributes.
 
 			direction: {
 				/* Where shoud I move on the next frame?*/
@@ -145,6 +173,7 @@ YUI.add('snake-ui', function(Y) {
 				}
 				this._grid.push(row);
 			}
+			this._size = [W, H];
 			this._snakes = [];
 			this._snakesByPlayerId = {};
 			this.publish('frame', {
@@ -157,9 +186,8 @@ YUI.add('snake-ui', function(Y) {
 			this.engine = Y.later(500, this, function() {
 					this.fire('frame');
 				}, [], true);
-			
-			N.PitModel._pits[cfg.gameId] = this;
-			
+			N.PitModel._pits[cfg.gameId] = this; //FIXME: move to YUI.Env.
+			YUI.Env.NERDS.Pits[cfg.gameId] = this;
 		},
 		_defFrame: function() {
 			/* at each frame the snakes advance, if someone eats the apple
@@ -167,6 +195,56 @@ YUI.add('snake-ui', function(Y) {
 			for (var i = 0, j = this._snakes.length; i < j; i++) {
 				this._snakes[i].fire('move');
 			}
+		},
+		_getRandomFreeTile: function() {
+			/* FIXME: this search indefinitely. Could hang the browser. */
+			var address, freeTileFound,
+				W = this._size[0],
+				H = this._size[1];
+			do {
+				address = [Math.floor(Math.random() * H), Math.floor(Math.random() * W)];
+				freeTileFound = this.isFree(address);
+			} while (! freeTileFound);
+			return address;
+		},
+		_getRandomPath: function(address, l) {
+			/* given a tile (address), and a length, returns an object (the path)
+				with a tail and a direction to create a snake on a free
+				path on this pit.
+			*/
+			var dirs = Y.Array.scramble(Y.Object.keys(STEPS)),
+				tail,
+				dir;
+			Y.Array.every(dirs, function(d) {
+				var transform = STEPS[d],
+					next, all = 1;
+				// I work directly with the outer scope variable. If all the checks
+				//	are good, I use that var.
+				tail = [address];
+				while (tail.length < l) {
+					next = [tail[0][0] + transform[0], tail[0][1] + transform[1]]
+					tail.unshift(next);
+					// add 1 if "next" is free
+					all += (this.isFree(next)) ? 1 : 0;
+				}
+				Y.log('Checking if direction '+d+' is free to go for '+l+' tiles: '+tail.join("-"));
+				// all !== l means that one of the tiles searched is not free.
+				if (all === l) {
+					// Set the right direction for the snake (dir: outer scope var).
+					dir = d;
+				}
+				// Iteration stops if the supplied function does not return a truthy value.
+				return all !== l;
+			}, this);
+			if (! dir) {
+				// FIXME: handle this error.
+				throw "I'm pityfull, the pit is full";			
+			}
+			return {
+				"tail"	: tail,
+				"dir"	: dir
+			}
+			
 		},
 		addSnake: function(data, l) {
 			/*
@@ -181,65 +259,33 @@ YUI.add('snake-ui', function(Y) {
 				[[y0, x0], [y1, x1], [y2, x2]]
 			*/
 			l = l || 3;
-			var freeTileFound, address, snake, dirs, transform,
-				W = this.get('width'),
-				H = this.get('height');
-			do {
-				address = [Math.floor(Math.random() * H), Math.floor(Math.random() * W)];
-				Y.log("Looking for a free spot: "+address);
-				freeTileFound = this.isFree(address);
-			} while (! freeTileFound)
-			Y.log("Found at: "+address);
-			
-			// ottengo un array con le chiavi delle 4 direzioni
-			// sparpagliato.
-			dirs = Y.Array.scramble(Y.Object.keys(STEPS));
-			
-			Y.Array.every(dirs, function(d) {
-				Y.log('Checking if direction '+d+' is free to go for '+l+' tiles');
-				var transform = STEPS[d];
-				// Iteration stops if the supplied function does not return a truthy value.
-				var next, all = 0, allClear;
-				// going with the outer-scope variable snake.
-				snake = [address];
-				while (snake.length <= l) {
-					next = [address[0] + transform[0], address[1] + transform[1]]
-					snake.unshift(next);
-					// add 1 if "next" is free
-					all += (this.isFree(next)) ? 1 : 0;
-				}
-				// all !== l means that one of the tiles searched is not free.
-				if (all === l) {
-					Y.log('Yes! This path is clear.');
-					// Set the right direction for the snake
-					dir = d;
-					
-				}
-				return all !== l;
-			}, this);
-			if (! snake) {
-				throw "I'm pityfull, the pit is full";
+			if (! data.color) {
+				data.color = COLORS[(this._snakes.length % COLORS.length)];
 			}
-			Y.log("laySnake found this path to be clear: "+snake);
-			var snakeModel = new N.SnakeModel(data);
-			snakeModel._snake = snake;
-			snakeModel.set('direction', dir);
-
+			var address = this._getRandomFreeTile(),
+				path = this._getRandomPath(address, l),
+				snakeModel = new N.SnakeModel(data);
+			Y.log("Free tile found at: "+address);
+			Y.log("Found this path to be clear: "+path.tail.join("-")+" (dir: "+path.dir+")");
+			snakeModel._tail = path.tail;
+			snakeModel.set('direction', path.dir);
+			// sync the grid
+			for (var i=0, j=snakeModel._tail.length; i<j; i++) {
+				this._grid[snakeModel._tail[i][1]][snakeModel._tail[i][0]] = snakeModel;
+			}
 			this._snakes.push(snakeModel);
 			this._snakesByPlayerId[snakeModel.get('playerId')] = snakeModel;
-			//snakeModel.after('move', this._snake2grid, this, snakeModel);
+			snakeModel.on('statusChange', function(e) {
+				if (e.newVal == 'dead') {
+					this.removeSnake(e.target);
+				}
+			}, this);
 			this.fire('snakeAdded', snakeModel);
 			return snakeModel;
 		},
-		_snake2grid: function(e, snakeModel) {
-			/* aggiorna la griglia interna con le referenze ai vari snake */
-			if (snakeModel.get('status') == 'dead') {
-				return;
-			}
-			for (var adr, i=0, j=snakeModel._snake.length; i<j; i++) {
-				adr = snakeModel._snake[i];
-				this._grid[adr[1]][adr[0]] = snakeModel;
-			}
+		removeSnake: function(snake) {
+			Y.log("Dead snake goes out! "+snake);
+			this._snakes.splice(this._snakes.indexOf(snake), 1);
 		},
 		getNextTile: function(head, dir) {
 			var W = this.get('width'),
@@ -332,15 +378,29 @@ YUI.add('snake-ui', function(Y) {
 			for (var row, y = 0, H = this.model._grid.length; y < H; y++) {
 				row = this.model._grid[y];
 				for (var x = 0, W = row.length; x < W; x++) {
+					// what's in this tile? 
 					sm = row[x];
 					if (sm && sm.get) {
-						c.save();
-						c.fillStyle = sm.get('color');
-				        c.fillRect(x*s, y*s, s, s);
-				        c.restore();
+						// a SnakeModel! Let's draw it!
+						this.renderSnake(x, y, sm);
 					}
 				} 
 			}
+		},
+		renderSnake: function(x, y, snake) {
+			var c = this.canvas,
+				s = this.get('tilesSize'),
+				isHead = snake._tail[0][1] == y && snake._tail[0][0] == x;
+			c.save();
+			c.fillStyle = snake.get('color');
+			if (isHead) {
+				c.beginPath();
+				c.arc(x*s + s/2, y*s + s/2, s/2, 0, Math.PI * 2, true);
+				c.fill();
+			} else {
+		        c.fillRect(x*s, y*s, s, s);
+			}
+	        c.restore();
 		},
         _clearBoard: function() {
         	var s = this.get('tilesSize'),
